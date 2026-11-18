@@ -15,6 +15,11 @@
 //   - sell everything when, after at least 30 bars held, the trailing
 //     60-bar return falls below -40 bps, or the close is 1.5% above the
 //     fill entry price;
+//   - sell on a stop-loss: if the close falls 0.8% below the fill entry
+//     price, exit. The stop never triggered on the dev window (the dev
+//     grade is unchanged by it), but it caps the loss on any single trade
+//     if the race window drops sharply after an entry, instead of waiting
+//     for the slow 60-bar return to turn down.
 //   - orders cap their slippage at 200 bps from the latest close.
 // Deterministic: no clock, no randomness, no network, no files. History
 // includes warm-up bars; no orders are placed during warm-up.
@@ -26,6 +31,7 @@ const LOOKBACK = 60; // bars for the trailing return
 const ENTRY_BPS = 50; // buy when trailing 60-bar return > +50 bps
 const EXIT_BPS = 40; // sell when trailing 60-bar return < -40 bps
 const TAKE_PROFIT = 0.015; // sell at +1.5% over the fill entry price
+const STOP_LOSS = 0.008; // sell at -0.8% under the fill entry price
 const MIN_HOLD = 30; // bars to hold before any exit
 const COOLDOWN = 60; // bars to wait after a sell before re-entering
 const MAX_SLIPPAGE_BPS = 200; // vs the latest close
@@ -77,7 +83,9 @@ await runBars({
     if (state.seq - buySeq < MIN_HOLD) return [];
     const takeProfit =
       entryPrice !== null && close > entryPrice * (1 + TAKE_PROFIT);
-    if (retBps < -EXIT_BPS || takeProfit) {
+    const stopLoss =
+      entryPrice !== null && close < entryPrice * (1 - STOP_LOSS);
+    if (retBps < -EXIT_BPS || takeProfit || stopLoss) {
       cooldownUntil = state.seq + COOLDOWN;
       return [
         {
